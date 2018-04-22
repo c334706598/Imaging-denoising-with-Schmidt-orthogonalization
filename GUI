@@ -1,0 +1,214 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Apr 21 19:00:29 2018
+
+@author: XIN
+"""
+import tkinter as tk
+from tkinter import filedialog
+import os.path
+from PIL import Image
+import numpy as np
+
+def gs_cofficient(v1, v2):
+    return np.dot(v2, v1) / np.dot(v1, v1)
+
+def multiply(cofficient, v):
+    return cofficient * v
+
+def proj(v1, v2):
+    return multiply(gs_cofficient(v1, v2), v1)
+
+def gs(X):
+    Y = []
+    for i in range(len(X)):
+        temp_vec = X[i]
+        for inY in Y:
+            proj_vec = proj(inY, X[i])
+            temp_vec = temp_vec - proj_vec
+        Y.append(temp_vec)
+#        print(np.std(temp_vec))
+#        std_array.append(np.std(temp_vec))
+#        print(std_array)
+       
+    for i in range(len(Y)):
+        Y[i] = Y[i] / 100
+#        print(np.dot(Y[i],Y[i]))
+        Y[i] = Y[i]/np.sqrt(np.dot(Y[i],Y[i]))*100
+#        print(Y[i])             
+    return Y
+
+window = tk.Tk()
+window.title('Image denoising with Schmidt orthogonalization')
+window.geometry('800x550')
+
+frm = tk.Frame(window)
+frm.pack()
+
+frm_l = tk.Frame(frm)
+frm_r = tk.Frame(frm)
+frm_l.pack(side='left')
+frm_r.pack(side='right')
+
+var = tk.StringVar()
+
+def load_bg():
+    bg_files = filedialog.askopenfilenames(
+            filetypes=((".tif",".tif"),("all files","*.*")),
+            title='Choose files')
+#    print('\n'.join(fileselected))
+    monitor.delete('1.0', tk.END)
+    monitor.insert('insert', '\n'.join(bg_files)+'\n')
+
+def gen_basis():
+    global basis, xsize, ysize, n_img
+    
+    temp = monitor.get('1.0', tk.END)
+    paths = temp.split("\n")
+#    print(paths)
+    images = []
+    for path in paths:
+        if os.path.exists(path):
+            im = Image.open(path)
+            xsize = np.array(im).shape[0]
+            ysize = np.array(im).shape[1] 
+            imarray = np.array(im).flatten()-np.mean(np.array(im))
+            images.append(imarray)
+            
+#    print(images)
+    n_img = len(images)
+#    print(xsize, ysize, n_img)
+    basis = np.array(gs(np.array(images)))
+    print(basis)
+    
+def export_basis():
+    export_path = filedialog.askdirectory()
+    print(export_path)
+    export_data = np.reshape(basis, (n_img,xsize,ysize))
+    
+    for i in range(len(export_data)):    
+        im = Image.fromarray(export_data[i])
+        im.save(export_path + '/' + str(i) + "-base.tiff", "TIFF")
+
+def load_atom():
+    atom_files = filedialog.askopenfilenames(
+            filetypes=((".tif",".tif"),("all files","*.*")),
+            title='Choose files')
+#    print('\n'.join(fileselected))
+    monitor2.delete('1.0', tk.END)
+    monitor2.insert('insert', '\n'.join(atom_files)+'\n')
+              
+def denoise():
+    global denoised_images, denoised_path
+    
+    temp = monitor2.get('1.0', tk.END)
+    paths = temp.split("\n")
+#    print(paths)
+    denoised_images = []
+    denoised_path = []
+    for path in paths:
+        if os.path.exists(path):
+            im = Image.open(path)
+            
+            imgdata = np.array(im)
+            imgdata_copy = imgdata.copy()
+            
+            if En_mask.get():
+                m_xc = int(mask_xc.get())
+                m_yc = int(mask_yc.get())
+                m_w = int(mask_width.get())
+                m_h = int(mask_height.get())
+                print(m_xc,m_yc,m_w,m_h)
+                imgdata_copy[m_yc-m_h//2:m_yc+m_h//2, m_xc-m_w//2:m_xc+m_w//2] = 0
+                mean = np.mean(imgdata_copy)*xsize*ysize/(xsize*ysize-m_w*m_h)
+            else:
+                mean = np.mean(imgdata_copy)               
+                         
+            imarray = imgdata.flatten()-mean
+            imarray_mask = imgdata_copy.flatten()-mean
+            
+            temp_vec = imarray
+            
+            for b in basis:
+                proj_vec = proj(b, imarray_mask)
+                temp_vec = temp_vec - proj_vec
+                
+            denoised_images.append(temp_vec + mean)
+            denoised_path.append(path)
+            print(denoised_path)
+            
+def export_atom():
+    export_data = np.reshape(denoised_images, (len(denoised_images),xsize,ysize))
+    
+    for i in range(len(export_data)):    
+        im = Image.fromarray(export_data[i])
+        im.save(denoised_path[i][:-4]+'-denoised.tif', "TIFF")
+        
+
+b_load_bg = tk.Button(frm_l, text='1. Load background images',width=30, 
+              height=2, command=load_bg)
+
+b_gen_basis = tk.Button(frm_l, text='2. Generate noise basis',width=30, 
+              height=2, command=gen_basis)
+
+b_export_basis = tk.Button(frm_l, text='3. Export noise basis figures',width=30, 
+              height=2, command=export_basis)
+
+b_load_atom = tk.Button(frm_l, text='4. Load atom images',width=30, 
+              height=2, command=load_atom)
+
+b_denoise = tk.Button(frm_l, text='5. Denoise',width=30, 
+              height=2, command=denoise)
+
+b_export_atom = tk.Button(frm_l, text='6. Export denoised images',width=30, 
+              height=2, command=export_atom)
+
+
+monitor = tk.Text(frm_r, height=17)
+monitor2 = tk.Text(frm_r, height=17)
+
+the_title = tk.Label(frm_l, bg='yellow',text='Image denoising \n with Schmidt orthogonalization',
+                     height=2)
+l= tk.Label(frm_r, bg='cyan',text='the background images selected')
+l2= tk.Label(frm_r, bg='cyan',text='images to get denoised')
+
+En_mask = tk.IntVar()
+enable_mask = tk.Checkbutton(frm_l, text='Enable mask', variable = En_mask)
+
+l_mask_xc = tk.Label(frm_l, text='mask_xc')
+l_mask_yc = tk.Label(frm_l, text='mask_yc')
+l_mask_width = tk.Label(frm_l, text='mask_width')
+l_mask_height = tk.Label(frm_l, text='mask_height')
+
+m_xc = tk.StringVar()
+m_yc = tk.StringVar()
+m_w = tk.StringVar()
+m_h = tk.StringVar()
+
+mask_xc = tk.Entry(frm_l, textvariable=m_xc)
+mask_yc = tk.Entry(frm_l, textvariable=m_yc)
+mask_width = tk.Entry(frm_l, textvariable=m_w)
+mask_height = tk.Entry(frm_l, textvariable=m_h)
+
+the_title.pack(side='top')
+l.pack()
+monitor.pack(side='top')
+l2.pack()
+monitor2.pack(side='bottom')
+b_load_bg.pack()
+b_gen_basis.pack()
+b_export_basis.pack()
+b_load_atom.pack()
+b_denoise.pack()
+b_export_atom.pack()
+enable_mask.pack()
+l_mask_xc.pack()
+mask_xc.pack()
+l_mask_yc.pack()
+mask_yc.pack()
+l_mask_width.pack()
+mask_width.pack()
+l_mask_height.pack()
+mask_height.pack()
+
+window.mainloop()
